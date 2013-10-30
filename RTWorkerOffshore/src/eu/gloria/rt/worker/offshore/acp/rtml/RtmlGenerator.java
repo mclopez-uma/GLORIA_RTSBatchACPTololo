@@ -1,14 +1,21 @@
 package eu.gloria.rt.worker.offshore.acp.rtml;
 
 
+import java.text.ParseException;
+import java.util.Date;
 import java.util.List;
 
 import eu.gloria.rt.catalogue.Catalogue;
 import eu.gloria.rt.catalogue.ObjCategory;
 import eu.gloria.rt.catalogue.ObjInfo;
+import eu.gloria.rt.catalogue.Observer;
+import eu.gloria.rt.ephemeris.EphemerisCalculator;
 import eu.gloria.rt.exception.RTException;
+import eu.gloria.rt.unit.Radec;
 import eu.gloria.rti.sch.core.ObservingPlan;
+import eu.gloria.rti.sch.core.plan.constraint.Constraint;
 import eu.gloria.rti.sch.core.plan.constraint.ConstraintMoonDistance;
+import eu.gloria.rti.sch.core.plan.constraint.ConstraintTarget;
 import eu.gloria.rti.sch.core.plan.constraint.ConstraintTargetAltitude;
 import eu.gloria.rti.sch.core.plan.constraint.Constraints;
 import eu.gloria.rti.sch.core.plan.instruction.CameraSettings;
@@ -16,6 +23,7 @@ import eu.gloria.rti.sch.core.plan.instruction.Expose;
 import eu.gloria.rti.sch.core.plan.instruction.Instruction;
 import eu.gloria.rti.sch.core.plan.instruction.Loop;
 import eu.gloria.rti.sch.core.plan.instruction.Target;
+import eu.gloria.tools.time.DateTools;
 
 
 public class RtmlGenerator {
@@ -34,6 +42,24 @@ public class RtmlGenerator {
 		context.setOutput(sb);
 		context.setRequestId(requestId);
 		
+		Constraints constraints = context.getOp().getConstraints();
+		
+		//Determines the description
+		String tmpOPDescription = context.getRequestDesc();
+		if (constraints != null && constraints.getTargets() != null ){
+			List<Constraint> targets = constraints.getTargets();
+			tmpOPDescription = tmpOPDescription + "TARGETS: ";
+			for (Constraint constraint : targets) {
+				ConstraintTarget tmp = (ConstraintTarget) constraint;
+				if (tmp.getObjName() != null){
+					tmpOPDescription = tmpOPDescription + " [" + tmp.getObjName() + "] ";
+				}else{
+					tmpOPDescription = tmpOPDescription + " [RA=" + tmp.getCoordinates().getJ2000().getRa() + ", DEC=" +  tmp.getCoordinates().getJ2000().getDec() + "] ";
+				}
+			}
+		}
+		context.setRequestDesc(tmpOPDescription);
+		
 		sb.append("<?xml version=\"1.0\" encoding=\"ISO8859-1\"?>").append("\n");
 		sb.append("<RTML version=\"2.3\">").append("\n");
 		sb.append("	<Contact>").append("\n");
@@ -48,7 +74,6 @@ public class RtmlGenerator {
 		sb.append("		<Schedule>").append("\n");
 		
 		//------------CONSTRAINTS-------------
-		Constraints constraints = context.getOp().getConstraints();
 		if (constraints != null && constraints.getTargetAltitude() != null ){
 			ConstraintTargetAltitude constTargetAltitude = (ConstraintTargetAltitude)constraints.getTargetAltitude();
 			double targetAltitude = constTargetAltitude.getAltitude();
@@ -63,7 +88,9 @@ public class RtmlGenerator {
 		sb.append("				<West>3</West>");
 		sb.append("			</HourAngleRange>  ");*/
 		
-		sb.append("			<SkyCondition>Good</SkyCondition>").append("\n");
+		if (context.getSkyCondition() != RtmlSkyCondition.None){
+			sb.append("			<SkyCondition>").append(context.getSkyCondition().toString()).append("</SkyCondition>").append("\n");
+		}
 		
 		
 		if (constraints != null){
@@ -79,6 +106,39 @@ public class RtmlGenerator {
 			sb.append("				<Width>6</Width>\n");
 			sb.append("			</Moon>").append("\n");
 		}
+		
+		if (context.getScheduleDateIni() != null || context.getScheduleDateEnd() != null){
+			
+			sb.append("			<TimeRange>\n");
+			
+			if (context.getScheduleDateIni() != null){ //<Earliest>2013-03-21T20:43:17.01</Earliest> --><Earliest>yyyy-MM-dd'T'HH:mm:ss</Earliest>
+				try {
+					//sb.append("			<Earliest>").append(DateTools.getDate(context.getScheduleDateIni(), "yyyy-MM-dd'T'HH:mm:ss")).append("</Earliest>\n");
+					sb.append("			<Earliest>").append(DateTools.getDate(DateTools.getGMT(context.getScheduleDateIni()), "yyyy-MM-dd'T'HH:mm:ss")).append("</Earliest>\n");
+				} catch (ParseException e) {
+					throw new RtmlException("Error formating ScheduleDateIni. " + e.getMessage());
+				}
+			}else{
+				sb.append("			<!-- NO TimeRange Earliest -->\n");
+			}
+			
+			if (context.getScheduleDateEnd() != null){ //<Latest>2013-03-21T20:43:17.01</Latest> --><Latest>yyyy-MM-dd'T'HH:mm:ss</Latest>
+				try {
+					sb.append("			<Latest>").append(DateTools.getDate(DateTools.getGMT(context.getScheduleDateEnd()), "yyyy-MM-dd'T'HH:mm:ss")).append("</Latest>\n");
+				} catch (ParseException e) {
+					throw new RtmlException("Error formating ScheduleDateEnd. " + e.getMessage());
+				}
+			}else{
+				sb.append("			<!-- NO TimeRange Latest -->\n");
+			}
+			
+			sb.append("			</TimeRange>\n");
+			
+		}else{
+			sb.append("			<!-- NO TimeRange -->\n");
+		}
+		
+		
 		
 		sb.append("			<Priority>100</Priority>").append("\n");
 		//------------CONSTRAINTS-------------
@@ -167,7 +227,18 @@ public class RtmlGenerator {
 						sb.append("			</Coordinates>").append("\n");
 						
 					}else{ //By name
-						sb.append("			<Planet>").append(context.getTarget().getObjName()).append("</Planet>").append("\n");
+						//OLD version based on name --> sb.append("			<Planet>").append(translatePlanetName(context.getTarget().getObjName())).append("</Planet>").append("\n");
+						
+						//New version based on radec....
+						Radec radec = getPlanetRadec(context.getTarget().getObjName(), context.getObserver(), context.getScheduleDateIni());
+						
+						if (radec == null) throw new RTException("Impossible to resolve the Major planet radec: " + context.getTarget().getObjName());
+						
+						sb.append("			<Coordinates>").append("\n");
+						sb.append("				<RightAscension>").append(radec.getRaDecimal()).append("</RightAscension>").append("\n");
+						sb.append("				<Declination>").append(radec.getDecDecimal()).append("</Declination>").append("\n");
+						sb.append("			</Coordinates>").append("\n");
+						
 					}
 				}
 			}
@@ -195,6 +266,40 @@ public class RtmlGenerator {
 			throw new RtmlException(ex.getMessage());
 		}
 		
+	}
+	
+	private Radec getPlanetRadec(String planetName, Observer observer, Date date) throws RTException{
+		
+		Radec result = null;
+		
+		Catalogue catalogue = new Catalogue(observer.getLongitude(), observer.getLatitude(), observer.getAltitude());
+		ObjInfo info = catalogue.getObject(planetName, ObjCategory.MajorPlanetAndMoon, date);
+		if (info != null){
+			result = info.getPosition();
+		}
+		
+		return result;
+	}
+	
+	private String translatePlanetName(String name){
+		
+		if (name != null){
+			String tmpName = name.toLowerCase().trim();
+			if (tmpName.equals("saturn")) return "Saturn";
+			if (tmpName.equals("pluto")) return "Pluto";
+			if (tmpName.equals("mercury")) return "Mercury";
+			if (tmpName.equals("venus")) return "Venus";
+			if (tmpName.equals("mars")) return "Mars";
+			if (tmpName.equals("jupiter")) return "Jupiter";
+			if (tmpName.equals("uranus")) return "Uranus";
+			if (tmpName.equals("neptune")) return "Neptune";
+			if (tmpName.equals("sun")) return "Sun";
+			if (tmpName.equals("moon")) return "Moon";
+			
+			return name;
+		}
+		
+		return null;
 	}
 	
 	

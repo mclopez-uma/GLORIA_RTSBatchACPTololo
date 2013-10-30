@@ -1,6 +1,7 @@
 package eu.gloria.rt.worker.offshore.acp.web;
 
 import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.io.UnsupportedEncodingException;
@@ -31,7 +32,6 @@ public class ProjectPlans {
 
 	private int projectID;
 	private DefaultHttpClient httpclient;
-	private Vector<Plan> projctPlans;
 	private Document xmlDoc;
 
 	private HttpPost httppost;
@@ -42,6 +42,14 @@ public class ProjectPlans {
 	 * @param projectID ID del proyecto para el cual estamos buscando su lista de planes.
 	 */
 	public ProjectPlans(int projectID, String statusUrl, String host, int port, String user, String pw) {
+		
+		System.out.println("ProjectPlans.Constructor(). projectID=" +projectID );
+		System.out.println("ProjectPlans.Constructor(). statusUrl=" +statusUrl );
+		System.out.println("ProjectPlans.Constructor(). host=" +host );
+		System.out.println("ProjectPlans.Constructor(). port=" +port );
+		System.out.println("ProjectPlans.Constructor(). user=" +user );
+		System.out.println("ProjectPlans.Constructor(). pw=" +pw );
+		
 		httpclient = new DefaultHttpClient();
 		AuthScope authScope;
 		authScope = new AuthScope(host, port);
@@ -49,19 +57,27 @@ public class ProjectPlans {
 		unamePwCredentials = new UsernamePasswordCredentials(user, pw);
 		httpclient.getCredentialsProvider().setCredentials(	authScope ,unamePwCredentials	);
 		this.projectID = projectID;
-		this.projctPlans = new Vector<Plan>();
+		
 		this.xmlDoc = null;
 		this.acpStatusUrl = statusUrl;
+	}
+	
+	public ProjectPlans() {
+		
+
+		this.xmlDoc = null;
+
 	}
 
 	private void generaPost()
 	{
 		MultipartEntity reqEntity;
 
-		httppost = new HttpPost(acpStatusUrl);
+		httppost = new HttpPost(acpStatusUrl + "?rid=" + this.projectID );
 		reqEntity = new MultipartEntity();
 		StringBody parameterID_Value;
 		parameterID_Value = null;
+		System.out.println("ProjectPlans. generatePost(). ProjectId=" +this.projectID );
 		try {
 			parameterID_Value = new StringBody(""+this.projectID);
 		} catch (UnsupportedEncodingException e) {
@@ -82,8 +98,6 @@ public class ProjectPlans {
 		
 		try {
 
-
-
 			System.out.println("executing request:'" + httppost.getRequestLine()+"'");
 			response = httpclient.execute(httppost);
 			resEntity = response.getEntity();
@@ -100,7 +114,7 @@ public class ProjectPlans {
 			while ((line = rd.readLine()) != null) {
 				sbLineas.append(line);
 				//sbLineas.append("\n");
-				//System.out.println(line);
+System.out.println(line);
 			}
 
 			if (resEntity != null) {
@@ -140,14 +154,62 @@ public class ProjectPlans {
 			}
 		}
 	}
+	
+	/*public void readHtml(String file){
+		
+		try {
+
+
+			BufferedReader rd;
+			rd = new BufferedReader(new FileReader(file));
+
+			String line;// = "";
+			StringBuilder sbLineas;
+			sbLineas = new StringBuilder();
+			while ((line = rd.readLine()) != null) {
+				sbLineas.append(line);
+				//sbLineas.append("\n");
+				System.out.println(line);
+			}
+
+			//////////////////////
+			DocumentBuilderFactory docBuilderFactory;
+			DocumentBuilder docBuilder;
+			docBuilderFactory = DocumentBuilderFactory.newInstance();
+			docBuilder = docBuilderFactory.newDocumentBuilder();
+
+			Pattern patron;
+			Matcher calce;
+			patron = Pattern.compile("<table id=(.*?)</table>");
+			calce = patron.matcher(sbLineas.toString());
+			if (calce.find())
+			{
+				String strTable;
+				strTable = calce.group(); 
+				System.out.println("table="+strTable);
+				this.xmlDoc = docBuilder.parse(new InputSource(new StringReader(strTable)));
+			}
+			//////////////////////
+
+		}catch(Exception ex){
+			ex.printStackTrace();
+			System.out.println("Exception: message="+ex.getMessage());
+		}
+		finally {
+			try {
+				httpclient.getConnectionManager().shutdown();
+			} catch (Exception ignore) {
+				System.out.println("Exception: message="+ignore.getMessage());
+			}
+		}
+	}*/
 
 
 	/**
 	 * analiza el HTML para llenar el vector de planes.
 	 */
-	public void analizaHtml()
+	public void analizaHtml(Vector<Plan> projectPlans)
 	{
-		this.projctPlans.clear();
 
 		NodeList listaRows;
 		listaRows = this.xmlDoc.getElementsByTagName("tr");
@@ -159,24 +221,32 @@ public class ProjectPlans {
 			nodo = listaRows.item(i);
 			Plan planLocal;
 			planLocal = new Plan(nodo);
-			this.projctPlans.add(planLocal);
+			projectPlans.add(planLocal);
 		}
 	}
 
 	
 	public Vector<Plan> getProjctPlans() {
-		return projctPlans;
+		
+		Vector<Plan> projectPlans = new Vector<Plan>();
+		
+		/*readHtml("c:\\dummy\\OPlist.html");
+		analizaHtml(projectPlans);*/
+		
+		readHtml();
+		analizaHtml(projectPlans);
+		
+		return projectPlans;
 	}
 
-	public void setProjctPlans(Vector<Plan> projctPlans) {
+	/*public void setProjctPlans(Vector<Plan> projctPlans) {
 		this.projctPlans = projctPlans;
-	}
+	}*/
 
 	public static void main(String[] args) throws Exception {
-		/*ProjectPlans scStatus;
-		scStatus = new ProjectPlans(40);
-		scStatus.readHtml();
-		scStatus.analizaHtml();
+	/*	ProjectPlans scStatus;
+		scStatus = new ProjectPlans();
+		//scStatus.readHtml("c:\\dummy\\OPlist.html");
 		for (Plan plan : scStatus.getProjctPlans()) {
 			System.out.println("-----");
 			System.out.println(plan.toString());

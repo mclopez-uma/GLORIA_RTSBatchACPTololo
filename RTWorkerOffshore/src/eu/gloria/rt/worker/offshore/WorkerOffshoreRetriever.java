@@ -43,7 +43,11 @@ public class WorkerOffshoreRetriever extends Worker{
 			
 			if (op != null){
 				
+				if (verbose) LogUtil.info(this, "PROCESSING OP: " + op.getId() );
+				
 				retriever.retrieve(op.getId());
+				
+				if (verbose) LogUtil.info(this, "PROCESSED OP: " + op.getId() );
 				
 			}else{
 				
@@ -56,7 +60,8 @@ public class WorkerOffshoreRetriever extends Worker{
 			if (verbose) LogUtil.info(this, "OK");
 			
 		} catch (Exception ex) {
-			if (verbose) LogUtil.info(this, "EXC");
+			ex.printStackTrace();
+			if (verbose) LogUtil.info(this, "EXC. " + ex.getMessage());
 			DBUtil.rollback(em);
 		} finally {
 			if (verbose) LogUtil.info(this, "FINAL");

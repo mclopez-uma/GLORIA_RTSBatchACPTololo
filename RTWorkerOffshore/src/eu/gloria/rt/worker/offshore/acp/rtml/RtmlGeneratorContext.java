@@ -1,5 +1,6 @@
 package eu.gloria.rt.worker.offshore.acp.rtml;
 
+import java.util.Date;
 import java.util.HashMap;
 
 import eu.gloria.rt.catalogue.Observer;
@@ -25,9 +26,13 @@ public class RtmlGeneratorContext {
 	private HashMap<String, String> filterMappingGloria2ACP;
 	private ObservingPlan op;
 	private Observer observer;
+	private Date scheduleDateIni;
+	private Date scheduleDateEnd;
+	private RtmlSkyCondition skyCondition;
 	
 	public RtmlGeneratorContext(){
 		filterMappingGloria2ACP = new HashMap<String, String>();
+		skyCondition = RtmlSkyCondition.None;
 	}
 	
 	/**
@@ -136,6 +141,30 @@ public class RtmlGeneratorContext {
 
 	public void setObserver(Observer observer) {
 		this.observer = observer;
+	}
+
+	public Date getScheduleDateIni() {
+		return scheduleDateIni;
+	}
+
+	public void setScheduleDateIni(Date scheduleDateIni) {
+		this.scheduleDateIni = scheduleDateIni;
+	}
+
+	public Date getScheduleDateEnd() {
+		return scheduleDateEnd;
+	}
+
+	public void setScheduleDateEnd(Date scheduleDateEnd) {
+		this.scheduleDateEnd = scheduleDateEnd;
+	}
+
+	public RtmlSkyCondition getSkyCondition() {
+		return skyCondition;
+	}
+
+	public void setSkyCondition(RtmlSkyCondition skyCondition) {
+		this.skyCondition = skyCondition;
 	}
 	
 

@@ -2,6 +2,7 @@ package eu.gloria.rt.worker.offshore.acp;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -11,6 +12,9 @@ import javax.persistence.EntityManager;
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import eu.gloria.rt.catalogue.CatalogueTools;
+import eu.gloria.rt.catalogue.Observer;
+import eu.gloria.rt.catalogue.RTSInfo;
 import eu.gloria.rt.db.scheduler.ObservingPlan;
 import eu.gloria.rt.db.scheduler.ObservingPlanManager;
 import eu.gloria.rt.db.scheduler.ObservingPlanState;
@@ -20,7 +24,10 @@ import eu.gloria.rt.entity.db.FileFormat;
 import eu.gloria.rt.entity.db.FileType;
 import eu.gloria.rt.entity.db.ObservingPlanOwner;
 import eu.gloria.rt.entity.db.ObservingPlanType;
+import eu.gloria.rt.exception.RTException;
 import eu.gloria.rt.exception.RTSchException;
+import eu.gloria.rt.tools.img.ConverterImageMagic;
+import eu.gloria.rt.tools.img.ConverterNetpbm;
 import eu.gloria.rt.worker.offshore.acp.rtml.RtmlGenerator;
 import eu.gloria.rt.worker.offshore.acp.rtml.RtmlGeneratorContext;
 import eu.gloria.rt.worker.offshore.acp.web.ACPManager;
@@ -30,11 +37,12 @@ import eu.gloria.rti.sch.core.OffshoreRetriever;
 import eu.gloria.rti_db.tools.RTIDBProxyConnection;
 import eu.gloria.tools.file.FileUtil;
 import eu.gloria.tools.log.LogUtil;
+import eu.gloria.tools.time.DateTools;
 
 public class OffshoreRetrieverACP extends OffshorePluginRetriever implements OffshoreRetriever {
 	
 	@Override
-	public void retrieve(String idOp) throws RTSchException {
+	public void retrieve(long idOp) throws RTSchException {
 		
 		String acpImgsBasePath = getPropertyValueString("acpImgsBasePath");
 		String acp_http_base_url = getPropertyValueString("acp_http_base_url");
@@ -50,6 +58,13 @@ public class OffshoreRetrieverACP extends OffshorePluginRetriever implements Off
 		String proxyPw = getPropertyValueString("proxyPw");
 		boolean proxyHttps = Boolean.parseBoolean(getPropertyValueString("proxyHttps"));
 		String proxyCertRep = getPropertyValueString("proxyCertRep");
+		//int fitsToPnmMaxInc = getPropertyValueInt("fitsToPnmMaxInc");
+		String imageMagickScale = getPropertyValueString("imageMagickScale");
+		
+		Observer observer = new Observer();
+		observer.setLatitude(getPropertyValueDouble("obs_latitude"));
+		observer.setLongitude(getPropertyValueDouble("obs_longitude"));
+		observer.setAltitude(getPropertyValueDouble("obs_altitude"));
 		
 		
 		LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). BEGIN");
@@ -110,20 +125,25 @@ public class OffshoreRetrieverACP extends OffshorePluginRetriever implements Off
 				        } else {
 				            if (fileEntry.getName().startsWith(prefix)){ //Belongs to this ObservingPlan....
 				            	
-				            	//Dates
-				            	Date fileCreationDate = new Date(fileEntry.lastModified());
-				            	if (creationFileDateEarliest == null || creationFileDateEarliest.compareTo(fileCreationDate) > 0) creationFileDateEarliest = fileCreationDate;
-				            	if (creationFileDateLatest == null || creationFileDateLatest.compareTo(fileCreationDate) < 0) creationFileDateLatest = fileCreationDate;
-				            	
-				            	LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). PROCESSING found file " + fileEntry.toString());
-				            	
 				            	//Resolve the file format.
 				            	FileFormat fileFormat = FileFormat.FITS;
 				            	if (fileEntry.getName().endsWith("jpg")){
 				            		fileFormat = FileFormat.JPG;
 				            	}
 				            	
-				            	LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). FileFormat=" +fileFormat.toString());
+				            	if (fileFormat == FileFormat.JPG){ //The jpg file is removed
+				            		fileEntry.delete();
+				            		continue; //Next file....
+				            	}
+				            	
+				            	LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). FileFormat=" +fileFormat.toString());		
+				            	
+				            	//Dates
+				            	Date fileCreationDate = new Date(fileEntry.lastModified());
+				            	if (creationFileDateEarliest == null || creationFileDateEarliest.compareTo(fileCreationDate) > 0) creationFileDateEarliest = fileCreationDate;
+				            	if (creationFileDateLatest == null || creationFileDateLatest.compareTo(fileCreationDate) < 0) creationFileDateLatest = fileCreationDate;
+				            	
+				            	LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). PROCESSING found file " + fileEntry.toString());
 				            	
 				            	//DBRepository->Create/recover the File information
 				            	String acpUUID = FileUtil.fileNameWithoutExtension(fileEntry.getName());
@@ -157,8 +177,84 @@ public class OffshoreRetrieverACP extends OffshorePluginRetriever implements Off
 									}
 				            		
 				            	}
+				            	
+				            	//Generate && upload && remove the format JPG....OLD VERSION
+				            	/*String filepnm = acpImgsBasePath + acpUUID + ".pnm";
+				            	String filejpg = acpImgsBasePath + acpUUID + ".jpg";
+				            	File pnm = new File(filepnm);
+				        		File jpg = new File(filejpg);
+				        		
+				        		String urljpg = "file://" + filejpg;
+				        		
+				            	try{
+				            		//jpg generation
+				            		ConverterNetpbm converter = new ConverterNetpbm();
+				            		converter.fitstopnm(fileEntry, pnm, fitsToPnmMaxInc); //fits->pnm
+				            		converter.pnmtojpeg(pnm, jpg);       //pnm->jpg
+				            		
+				            		//upload format
+				            		LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). source file url=" + urljpg);
+			            			dbProxy.getProxy().fileAddFormat(gloriaFileUUID, FileFormat.JPG, urljpg);
+			            			uploadedFiles.add(jpg);
+				            			
+			            			LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). UPLOADED file format. url=" + urljpg);
+			            			
+				            	}catch(Exception ex){
+				            		
+				            		throw new Exception("Error adding a file format to a file into the DBRepository. urlSourcefile=[" + urljpg + "]. " + ex.getMessage());
+				            		
+				            	}finally{
+				            		
+				            		if (pnm.exists()) pnm.delete();
+				            		if (jpg.exists()) jpg.delete();
+				            		
+				            	}
 
-				            	//Creates the format
+				            	//Creates the format FITS
+				            	String urlSource = "file://" + acpImgsBasePath + fileEntry.getName();
+				            	LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). source file url=" + urlSource);
+				            	try{
+			            			dbProxy.getProxy().fileAddFormat(gloriaFileUUID, fileFormat, urlSource);
+			            			uploadedFiles.add(fileEntry);
+			            			
+			            			LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). UPLOADED file format. url=" + urlSource);
+			            		}catch(Exception ex){
+									throw new Exception("Error adding a file format to a file into the DBRepository. urlSourcefile=" + urlSource);
+								}*/
+				            	
+				            	//Generate && upload && remove the format JPG....
+				            	String filejpg = acpImgsBasePath + acpUUID + ".jpg";
+				        		File jpg = new File(filejpg);
+				        		
+				        		String urljpg = "file://" + filejpg;
+				        		
+				            	try{
+				            		//jpg generation
+				            		ConverterImageMagic converter = new ConverterImageMagic();
+				            		if (imageMagickScale != null){
+				            			converter.fitstojpeg(fileEntry, jpg, imageMagickScale); //fits->jpg
+				            		}else{
+				            			converter.fitstojpeg(fileEntry, jpg); //fits->jpg	
+				            		}
+				            		
+				            		//upload format
+				            		LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). source file url=" + urljpg);
+			            			dbProxy.getProxy().fileAddFormat(gloriaFileUUID, FileFormat.JPG, urljpg);
+			            			uploadedFiles.add(jpg);
+				            			
+			            			LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). UPLOADED file format. url=" + urljpg);
+			            			
+				            	}catch(Exception ex){
+				            		
+				            		throw new Exception("Error adding a file format to a file into the DBRepository. urlSourcefile=[" + urljpg + "]. " + ex.getMessage());
+				            		
+				            	}finally{
+				            		
+				            		if (jpg.exists()) jpg.delete();
+				            		
+				            	}
+
+				            	//Creates the format FITS
 				            	String urlSource = "file://" + acpImgsBasePath + fileEntry.getName();
 				            	LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). source file url=" + urlSource);
 				            	try{
@@ -191,6 +287,9 @@ public class OffshoreRetrieverACP extends OffshorePluginRetriever implements Off
 						if (creationFileDateEarliest != null) dbOp.setExecDateIni(creationFileDateEarliest);
 						if (creationFileDateLatest != null) dbOp.setExecDateEnd(creationFileDateLatest);
 						
+						//Resolves the observation session.
+						Date currentSession = getObservationSessionDate(observer, creationFileDateEarliest);
+						dbOp.setExecDateObservationSession(currentSession);
 					}
 					
 				}catch(Exception ex){
@@ -204,7 +303,7 @@ public class OffshoreRetrieverACP extends OffshorePluginRetriever implements Off
 				//Delete OP from ACP.
 				
 				ACPManager acpManager = new ACPManager(acp_gloria_project_id, acp_http_base_url, acp_http_ip, acp_http_port, acp_http_auth_user, acp_http_auth_pw);
-				acpManager.removePlan(idOp);
+				acpManager.removePlan(dbOp.getUuid());
 				
 			}else{
 				
@@ -216,6 +315,8 @@ public class OffshoreRetrieverACP extends OffshorePluginRetriever implements Off
 			
 		} catch (Exception ex) {
 			
+			ex.printStackTrace();
+			
 			DBUtil.rollback(em);
 			throw new RTSchException(ex.getMessage());
 			
@@ -225,6 +326,17 @@ public class OffshoreRetrieverACP extends OffshorePluginRetriever implements Off
 		
 		LogUtil.info(this, "OffshoreRetrieverACP.retrieve(" + idOp + "). END");
 		
+	}
+	
+	private Date getObservationSessionDate(Observer observer, Date date) throws Exception{
+		RTSInfo info = CatalogueTools.getSunRTSInfo(observer, date);
+		Date currentSession = DateTools.trunk(date, "yyyyMMdd");
+		if (date.compareTo(info.getSet()) >= 0){ //after sun set -> currentSession + 1 day
+			currentSession = DateTools.increment(currentSession, Calendar.DATE, 1);
+		} else { //currentSession
+			//Nothing
+		}
+		return currentSession;
 	}
 	
 	private XMLGregorianCalendar getDate(Date date) throws Exception{

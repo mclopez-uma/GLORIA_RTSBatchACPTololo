@@ -31,7 +31,16 @@ public class ACPManager {
 	
 		try{
 			
+			//Be sure a session is openned
+			LogUtil.info(this, "ACPManager.removePlan:: opening session.");
+			ACPSession acpSession = new ACPSession(getAcpSchedulerURL("index.asp"), host, port, user, pw);
+			acpSession.open();
+			
+			//Start the main process...
 			String acpPageUrlStatus = getAcpSchedulerURL("pstatus.asp");
+			
+			LogUtil.info(this, "ACPManager.removePlan:: OP UUID=" + opUuid);
+			LogUtil.info(this, "ACPManager.removePlan:: Status URL=" + acpPageUrlStatus);
 			
 			boolean deleted = false;
 			String opName = "G" + opUuid;
@@ -40,11 +49,19 @@ public class ACPManager {
 			ProjectPlans projectPlans = new ProjectPlans(projectID, acpPageUrlStatus, host, port, user, pw);
 			Vector<Plan> plans = projectPlans.getProjctPlans();
 			
+			LogUtil.info(this, "ACPManager.removePlan:: Looking for OP by OpName=" + opName);
+			
+			
 			if (plans != null){
 				for (Plan plan : plans) {
-					if (plan.getName().equals(opName)){ //Found
+					if (plan.getName() != null && plan.getName().equals(opName)){ //Found
+						
+						LogUtil.info(this, "ACPManager.removePlan:: GLORIA project  OpList. Name=[" + plan.getName() + "]. FOUND!!!! -> remove");
 						
 						String acpPageUrlPlanDelete = getAcpSchedulerURL("seditplan.asp");
+						
+						LogUtil.info(this, "ACPManager.removePlan:: Deleting plan ID=" + plan.getId());
+						LogUtil.info(this, "ACPManager.removePlan:: Delete URL=" + acpPageUrlPlanDelete);
 						
 						DeletePlan deletePlan = new DeletePlan(plan.getId(), acpPageUrlPlanDelete, host, port, user, pw);
 						deletePlan.readHtml();
@@ -55,6 +72,8 @@ public class ACPManager {
 						break;
 						
 					}
+					
+					LogUtil.info(this, "ACPManager.removePlan:: GLORIA project  OpList. Name=[" + plan.getName() + "]. It's not the right OP.");
 				}
 				
 			}

@@ -18,5 +18,6 @@
 	<classpathentry kind="lib" path="C:/repositorio/workspace/eclipsews/extlibs/httpcomponents-client-4.2.1/lib/commons-logging-1.1.1.jar"/>
 	<classpathentry kind="lib" path="C:/repositorio/workspace/eclipsews/extlibs/httpcomponents-client-4.2.1/lib/commons-codec-1.6.jar"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/RTIDBProxy"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/RTTools"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
